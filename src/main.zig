@@ -1,5 +1,23 @@
 const std = @import("std");
 
+const tool = struct {
+    tool_type: []const u8,
+    const function = struct {
+        name: []const u8,
+        description: []const u8,
+        const parameters = struct {
+            required: [][]const u8,
+            parameter_type: []const u8,
+            const properties = struct {
+                const file_path = struct {
+                    file_path_type: []const u8,
+                    description: []const u8,
+                };
+            };
+        };
+    };
+};
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -24,6 +42,25 @@ pub fn main() !void {
         .model = "anthropic/claude-haiku-4.5",
         .messages = &[_]struct { role: []const u8, content: []const u8 }{
             .{ .role = "user", .content = prompt_str },
+        },
+        .tools = &[_]tool{
+            .{
+                .tool_type = "function",
+                .function = .{
+                    .name = "Read",
+                    .description = "Read and return the contents of a file",
+                    .parameters = .{
+                        .parameter_type = "object",
+                        .required = .{"file_path"},
+                        .properties = .{
+                            .file_path = .{
+                                .file_path_type = "string",
+                                .description = "The path to the file to read",
+                            },
+                        },
+                    },
+                },
+            },
         },
     });
     const body = body_out.written();
