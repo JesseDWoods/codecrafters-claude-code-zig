@@ -2,14 +2,14 @@ const std = @import("std");
 
 const tool = struct {
     tool_type: []const u8,
-    const function = struct {
+    function: struct {
         name: []const u8,
         description: []const u8,
-        const parameters = struct {
-            required: [][]const u8,
+        parameters: struct {
+            required: []const[]const u8,
             parameter_type: []const u8,
-            const properties = struct {
-                const file_path = struct {
+            properties: struct {
+                file_path: struct {
                     file_path_type: []const u8,
                     description: []const u8,
                 };
