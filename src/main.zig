@@ -38,7 +38,7 @@ pub fn main() !void {
                     .description = "Read and return the contents of a file",
                     .parameters = .{
                         .type = "object",
-                        .required = .{"file_path"},
+                        .required = &[_][]const u8{"file_path"},
                         .properties = .{
                             .file_path = .{
                                 .type = "string",
