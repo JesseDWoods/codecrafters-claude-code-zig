@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const tool = struct { tool_type: []const u8, function: struct { name: []const u8, description: []const u8, parameters: struct { required: []const []const u8, parameter_type: []const u8, properties: struct { file_path: struct {
-    file_path_type: []const u8,
+const tool = struct { type: []const u8, function: struct { name: []const u8, description: []const u8, parameters: struct { required: []const []const u8, type: []const u8, properties: struct { file_path: struct {
+    type: []const u8,
     description: []const u8,
 } } } } };
 
@@ -32,16 +32,16 @@ pub fn main() !void {
         },
         .tools = &[_]tool{
             .{
-                .tool_type = "function",
+                .type = "function",
                 .function = .{
                     .name = "Read",
                     .description = "Read and return the contents of a file",
                     .parameters = .{
-                        .parameter_type = "object",
+                        .type = "object",
                         .required = .{"file_path"},
                         .properties = .{
                             .file_path = .{
-                                .file_path_type = "string",
+                                .type = "string",
                                 .description = "The path to the file to read",
                             },
                         },
