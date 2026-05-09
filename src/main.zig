@@ -86,7 +86,7 @@ pub fn main() !void {
     if (choices.array.items.len == 0) {
         @panic("No choices in response");
     }
-    for (choices) |choice| {
+    for (choices.array.items) |choice| {
         std.debug.print("{d}\n", .choice.index);
     }
 
