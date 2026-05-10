@@ -92,7 +92,7 @@ pub fn main() !void {
         // Check if there are tool calls
         if (message.get("tool_calls")) |tool_calls| {
             // Get the first tool call
-            const tool_call = tool_calls.array.items[ctr].object.get("function").?.object;
+            const tool_call = tool_calls.array.items[0].object.get("function").?.object;
             _ = tool_call.get("name").?.string;
             const arguments_str = tool_call.get("arguments").?.string;
             // Parse the arguments
@@ -110,10 +110,4 @@ pub fn main() !void {
         }
         ctr += 1;
     }
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
-    std.debug.print("Logs from your program will appear here!\n", .{});
-
-    // TODO: Uncomment the lines below to pass the first stage
-    const content = choices.array.items[0].object.get("message").?.object.get("content").?.string;
-    try std.fs.File.stdout().writeAll(content);
 }
