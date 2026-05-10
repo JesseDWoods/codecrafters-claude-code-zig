@@ -86,10 +86,11 @@ pub fn main() !void {
     if (choices.array.items.len == 0) {
         @panic("No choices in response");
     }
-    for (choices.array.items) |choice| {
-        std.debug.print("{d}\n", .choice.index);
+    var ctr = 0;
+    while (ctr < choices.array.items.len) {
+        choices.array.items[ctr];
+        ctr += 1;
     }
-
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     std.debug.print("Logs from your program will appear here!\n", .{});
 
