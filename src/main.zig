@@ -86,9 +86,28 @@ pub fn main() !void {
     if (choices.array.items.len == 0) {
         @panic("No choices in response");
     }
-    var ctr = 0;
+    var ctr: usize = 0;
     while (ctr < choices.array.items.len) {
-        choices.array.items[ctr];
+        const message = choices.array.items[ctr].object.get("message").?.object;
+        // Check if there are tool calls
+        if (message.get("tool_calls")) |tool_calls| {
+            // Get the first tool call
+            const tool_call = tool_calls.array.items[ctr].object.get("function").?.object;
+            _ = tool_call.get("name").?.string;
+            const arguments_str = tool_call.get("arguments").?.string;
+            // Parse the arguments
+            const args_parsed = try std.json.parseFromSlice(std.json.Value, allocator, arguments_str, .{});
+            defer args_parsed.deinit();
+            const file_path = args_parsed.value.object.get("file_path").?.string;
+            // Execute the Read tool
+            const file_contents = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
+            defer allocator.free(file_contents);
+            try std.fs.File.stdout().writeAll(file_contents);
+        } else {
+            // Print the message content if there are no tool calls
+            const content = message.get("content").?.string;
+            try std.fs.File.stdout().writeAll(content);
+        }
         ctr += 1;
     }
     // You can use print statements as follows for debugging, they'll be visible when running tests.
