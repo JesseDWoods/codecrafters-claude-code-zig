@@ -3,7 +3,8 @@ const std = @import("std");
 const tool = struct { type: []const u8, function: struct { name: []const u8, description: []const u8, parameters: struct { required: []const []const u8, type: []const u8, properties: struct { file_path: struct {
     type: []const u8,
     description: []const u8,
-} } } } };
+    } } } } };
++ const MAX_MESSAGES = 10;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -21,93 +22,162 @@ pub fn main() !void {
     const api_key = std.posix.getenv("OPENROUTER_API_KEY") orelse @panic("OPENROUTER_API_KEY is not set");
     const base_url = std.posix.getenv("OPENROUTER_BASE_URL") orelse "https://openrouter.ai/api/v1";
 
-    // Build request body
-    var body_out: std.io.Writer.Allocating = .init(allocator);
-    defer body_out.deinit();
-    var jw: std.json.Stringify = .{ .writer = &body_out.writer };
-    try jw.write(.{
-        .model = "anthropic/claude-haiku-4.5",
-        .messages = &[_]struct { role: []const u8, content: []const u8 }{
-            .{ .role = "user", .content = prompt_str },
-        },
-        .tools = &[_]tool{
-            .{
-                .type = "function",
-                .function = .{
-                    .name = "Read",
-                    .description = "Read and return the contents of a file",
-                    .parameters = .{
-                        .type = "object",
-                        .required = &[_][]const u8{"file_path"},
-                        .properties = .{
-                            .file_path = .{
-                                .type = "string",
-                                .description = "The path to the file to read",
-                            },
+    //Store messages as raw JSON to avoid unnecessary parsing and serialization
+    var message_count: usize = 0;
+    var messages:[MAX_MESSAGES][]const u8 = undefined;
+    defer {
+        for(0..message_count) |i| {
+            allocator.free(messages[i]);
+        }
+    }
+    // Add user prompt as raw JSON
+    {
+        var user_message_out: std.io.Writer.Allocating = .init(allocator);
+        defer user_message_out.deinit();
+        var jw: std.json.Stringify = .{ .writer = &user_message_out.writer };
+        try jw.write(.{
+            .object = &.{
+                .{ .name = "role", .value = "user" },
+                .{ .name = "content", .value = prompt_str },
+            },
+        });
+        const written = user_message_out.written();
+        messages[message_count] = try allocator.dupe(u8, written);
+        message_count += 1;
+    }
+    //Define tools as raw JSON
+    const tools = &[_]struct { type: []const u8, function: struct { name: []const u8,
+                                                                   description: []const u8, parameters: struct {
+                                                                       required: []const []const u8, type: []const u8, properties: struct {
+                                                                           file_path: struct {
+                                                                                 type: []const u8,
+                                                                                 description: []const u8,
+    }}}}}{
+        .{
+            .type = "function",
+            .function = .{
+                .name = "Read",
+                .description = "Read the contents of a file given its path",
+                .parameters = .{
+                    .required = &[_][]const u8{ "file_path" },
+                    .type = "object",
+                    .required = &[_][]const u8{ "file_path" },
+                    .properties = .{
+                        .file_path = .{
+                            .type = "string",
+                            .description = "The path to the file to read, relative to the current working directory",
                         },
+
                     },
                 },
             },
         },
-    });
-    const body = body_out.written();
+    };
 
-    // Build URL and auth header
-    const url_str = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
-    defer allocator.free(url_str);
-
-    const auth_value = try std.fmt.allocPrint(allocator, "Bearer {s}", .{api_key});
-    defer allocator.free(auth_value);
-
-    // Make HTTP request
-    var client: std.http.Client = .{ .allocator = allocator };
-    defer client.deinit();
-
-    var response_out: std.io.Writer.Allocating = .init(allocator);
-    defer response_out.deinit();
-
-    _ = try client.fetch(.{
-        .location = .{ .url = url_str },
-        .method = .POST,
-        .payload = body,
-        .extra_headers = &.{
-            .{ .name = "content-type", .value = "application/json" },
-            .{ .name = "authorization", .value = auth_value },
-        },
-        .response_writer = &response_out.writer,
-    });
-    const response_body = response_out.written();
-
-    // Parse response
-    const parsed = try std.json.parseFromSlice(std.json.Value, allocator, response_body, .{});
-    defer parsed.deinit();
-
-    const choices = parsed.value.object.get("choices") orelse @panic("No choices in response");
-    if (choices.array.items.len == 0) {
-        @panic("No choices in response");
-    }
-    var ctr: usize = 0;
-    while (ctr < choices.array.items.len) {
-        const message = choices.array.items[ctr].object.get("message").?.object;
-        // Check if there are tool calls
-        if (message.get("tool_calls")) |tool_calls| {
-            // Get the first tool call
-            const tool_call = tool_calls.array.items[0].object.get("function").?.object;
-            _ = tool_call.get("name").?.string;
-            const arguments_str = tool_call.get("arguments").?.string;
-            // Parse the arguments
-            const args_parsed = try std.json.parseFromSlice(std.json.Value, allocator, arguments_str, .{});
-            defer args_parsed.deinit();
-            const file_path = args_parsed.value.object.get("file_path").?.string;
-            // Execute the Read tool
-            const file_contents = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
-            defer allocator.free(file_contents);
-            try std.fs.File.stdout().writeAll(file_contents);
-        } else {
-            // Print the message content if there are no tool calls
-            const content = message.get("content").?.string;
-            try std.fs.File.stdout().writeAll(content);
+    while(true) {
+        //Build request body with all messages
+        var body_out: std.io.Writer.Allocating = .init(allocator);
+        defer body_out.deinit();
+        var jw: std.json.Stringify = .{ .writer = &body_out.writer };
+        try body_out.writer.writeAll("{\"model\":\"anthropic/claude-haiku-4.5\",\"messages\":[");
+        for (0..message_count) |i| {
+            if (i > 0) try body_out.writer.writeAll(",");
+            try body_out.writer.writeAll(messages[i]);
         }
-        ctr += 1;
+        try body_out.writer.writeAll("],\"tools\":[");
+        try jw.write(tools);
+        try body_out.writer.writeAll("]}");
+        const body = body_out.written();
+
+        //Build url and headers
+        //Note: OpenRouter expects the API key in the Authorization header as "Authorization:
+        const url_string = std.fmt.allocPrint(allocator, "{s}/chat/completions",.{ base_url }) orelse @panic("Failed to build URL");
+        defer allocator.free(url_string);
+
+        const authorization_value = try std.fmt.allocPrint(allocator, "Bearer {s}", .{ api_key });
+        defer allocator.free(authorization_value);
+
+        //Make HTTP request
+        var client: std.http.Client = .{ .allocator = allocator };
+        defer client.deinit();
+
+        var response_out: std.io.Writer.Allocating = .init(allocator);
+        defer response_out.deinit();
+
+        _ = try client.fetch( .{
+            .location = .{ .url = url_string },
+            .method = .Post,
+            .payload = body,
+            .extra_headers = &.{
+                .{ .name = "Content-Type", .value = "application/json" },
+                .{ .name = "Authorization", .value = authorization_value },
+            },
+            .response_writer = &response_out.writer,
+        });
+        const response_body = response_out.written();
+
+        //Parse response to extract assistant message and tool calls
+        const parsed = try std.json.parseFromSlice(std.json.Value, allocator, response_body, .{});
+        defer parsed.deinit();
+
+        const choices = parsed.value.object.get("choices") orelse @panic("Response missing 'choices'");
+        if (choices.array.items.len == 0) {
+            @panic("Response 'choices' array is empty");
+        }
+        const choice = choices.array.items[0];
+        const message_object = choice.object.get("message").?.object;
+
+        if(message_object.get("tool_calls")) |tool_calls_value| {
+
+            //Append assistant message
+            var assistant_out: std.io.Writer.Allocating = .init(allocator);
+            defer assistant_out.deinit();
+            var ajw: std.json.Stringify = .{ .writer = &assistant_out.writer };
+            try ajw.write(.{
+                .role = "assistant",
+                .tool_calls = tool_calls_value,
+            });
+            const assistant_message  = assistant_out.written();
+            messages[message_count] = try allocator.dupe(u8, assistant_message);
+            message_count += 1;
+
+            //Handle tool calls
+            const tool_calls = tool_calls_value.array.items;
+            for (tool_calls) |tool_call_value| {
+                const tool_call_object = tool_call_value.object;
+                const tool_call_id = tool_call_object.get("id")?.string orelse @panic("Tool call missing 'id'");
+                const function_object = tool_call_object.get("function").?.object orelse @panic("Tool call missing 'function'");
+                const function_name = function_object.get("name").?.string orelse @panic("Tool call function missing 'name'");
+                const arguments_string = function_object.get("arguments").?.object orelse @panic("Tool call function missing 'arguments'");
+
+                //execute the tool
+                var result: []const u8 = undefined;
+                if (std.mem.eql(u8, function_name, "Read")) {
+                    const arguments_parsed = try std.json.parseFromSlice(std.json.Value, allocator, arguments_string, .{});
+                    defer arguments_parsed.deinit();
+                    const file_path = arguments_parsed.value.object.get("file_path").?.string;
+                    result = try std.fs.cwd().readFileAlloc(allocator, file_path, 1024 * 1024);
+                    defer allocator.free(result);
+
+                    //append tool result
+                    var tool_out: std.io.Writer.Allocating = .init(allocator);
+                    defer tool_out.deinit();
+                    var tjw: std.json.Stringify = .{ .writer = &tool_out.writer };
+                    try tjw.write(.{
+                        .role = "tool",
+                        .tool_call_id = tool_call_id,
+                        .content = result,
+                    });
+                    const tool_message = tool_out.written();
+                    messages[message_count] = try allocator.dupe(u8, tool_message);
+                    message_count += 1;
+                }
+            }
+        } else {
+            //No tool calls, just append assistant message
+            const content = message_object.get("content").?.string orelse @panic("Assistant message missing 'content'");
+            try std.fs.File.stdout().writeAll(content);
+            break;
+        }
     }
 }
