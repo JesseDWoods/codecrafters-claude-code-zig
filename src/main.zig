@@ -1,10 +1,6 @@
 const std = @import("std");
 
-const tool = struct { type: []const u8, function: struct { name: []const u8, description: []const u8, parameters: struct { required: []const []const u8, type: []const u8, properties: struct { file_path: struct {
-    type: []const u8,
-    description: []const u8,
-    } } } } };
-+ const MAX_MESSAGES = 10;
+const MAX_MESSAGES = 10;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -145,10 +141,10 @@ pub fn main() !void {
             const tool_calls = tool_calls_value.array.items;
             for (tool_calls) |tool_call_value| {
                 const tool_call_object = tool_call_value.object;
-                const tool_call_id = tool_call_object.get("id")?.string orelse @panic("Tool call missing 'id'");
-                const function_object = tool_call_object.get("function").?.object orelse @panic("Tool call missing 'function'");
-                const function_name = function_object.get("name").?.string orelse @panic("Tool call function missing 'name'");
-                const arguments_string = function_object.get("arguments").?.object orelse @panic("Tool call function missing 'arguments'");
+                const tool_call_id = tool_call_object.get("id").?.string;
+                const function_object = tool_call_object.get("function").?.object;
+                const function_name = function_object.get("name").?.string;
+                const arguments_string = function_object.get("arguments").?.object;
 
                 //execute the tool
                 var result: []const u8 = undefined;
