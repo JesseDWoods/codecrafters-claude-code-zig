@@ -32,10 +32,8 @@ pub fn main() !void {
         defer user_message_out.deinit();
         var jw: std.json.Stringify = .{ .writer = &user_message_out.writer };
         try jw.write(.{
-            .object = &.{
-                .{ .name = "role", .value = "user" },
-                .{ .name = "content", .value = prompt_str },
-            },
+            .role = "user",
+            .content = prompt_str,
         });
         const written = user_message_out.written();
         messages[message_count] = try allocator.dupe(u8, written);
@@ -57,7 +55,6 @@ pub fn main() !void {
                 .parameters = .{
                     .required = &[_][]const u8{ "file_path" },
                     .type = "object",
-                    .required = &[_][]const u8{ "file_path" },
                     .properties = .{
                         .file_path = .{
                             .type = "string",
@@ -74,20 +71,20 @@ pub fn main() !void {
         //Build request body with all messages
         var body_out: std.io.Writer.Allocating = .init(allocator);
         defer body_out.deinit();
-        var jw: std.json.Stringify = .{ .writer = &body_out.writer };
         try body_out.writer.writeAll("{\"model\":\"anthropic/claude-haiku-4.5\",\"messages\":[");
         for (0..message_count) |i| {
             if (i > 0) try body_out.writer.writeAll(",");
             try body_out.writer.writeAll(messages[i]);
         }
-        try body_out.writer.writeAll("],\"tools\":[");
-        try jw.write(tools);
+        try body_out.writer.writeAll("],\"tools\":");
+        var tools_jw: std.json.Stringify = .{ .writer = &body_out.writer };
+        try tools_jw.write(tools);
         try body_out.writer.writeAll("]}");
         const body = body_out.written();
 
         //Build url and headers
         //Note: OpenRouter expects the API key in the Authorization header as "Authorization:
-        const url_string = std.fmt.allocPrint(allocator, "{s}/chat/completions",.{ base_url }) orelse @panic("Failed to build URL");
+        const url_string = try std.fmt.allocPrint(allocator, "{s}/chat/completions",.{ base_url });
         defer allocator.free(url_string);
 
         const authorization_value = try std.fmt.allocPrint(allocator, "Bearer {s}", .{ api_key });
@@ -102,7 +99,7 @@ pub fn main() !void {
 
         _ = try client.fetch( .{
             .location = .{ .url = url_string },
-            .method = .Post,
+            .method = .POST,
             .payload = body,
             .extra_headers = &.{
                 .{ .name = "Content-Type", .value = "application/json" },
@@ -131,6 +128,7 @@ pub fn main() !void {
             var ajw: std.json.Stringify = .{ .writer = &assistant_out.writer };
             try ajw.write(.{
                 .role = "assistant",
+                .content = @as(?[]const u8, null),
                 .tool_calls = tool_calls_value,
             });
             const assistant_message  = assistant_out.written();
@@ -144,7 +142,7 @@ pub fn main() !void {
                 const tool_call_id = tool_call_object.get("id").?.string;
                 const function_object = tool_call_object.get("function").?.object;
                 const function_name = function_object.get("name").?.string;
-                const arguments_string = function_object.get("arguments").?.object;
+                const arguments_string = function_object.get("arguments").?.string;
 
                 //execute the tool
                 var result: []const u8 = undefined;
@@ -171,7 +169,7 @@ pub fn main() !void {
             }
         } else {
             //No tool calls, just append assistant message
-            const content = message_object.get("content").?.string orelse @panic("Assistant message missing 'content'");
+            const content = message_object.get("content").?.string;
             try std.fs.File.stdout().writeAll(content);
             break;
         }
