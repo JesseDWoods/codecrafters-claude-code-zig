@@ -20,9 +20,9 @@ pub fn main() !void {
 
     //Store messages as raw JSON to avoid unnecessary parsing and serialization
     var message_count: usize = 0;
-    var messages:[MAX_MESSAGES][]const u8 = undefined;
+    var messages: [MAX_MESSAGES][]const u8 = undefined;
     defer {
-        for(0..message_count) |i| {
+        for (0..message_count) |i| {
             allocator.free(messages[i]);
         }
     }
@@ -40,34 +40,30 @@ pub fn main() !void {
         message_count += 1;
     }
     //Define tools as raw JSON
-    const tools = &[_]struct { type: []const u8, function: struct { name: []const u8,
-                                                                   description: []const u8, parameters: struct {
-                                                                       required: []const []const u8, type: []const u8, properties: struct {
-                                                                           file_path: struct {
-                                                                                 type: []const u8,
-                                                                                 description: []const u8,
-    }}}}}{
+    const tools = &[_]struct { type: []const u8, function: struct { name: []const u8, description: []const u8, parameters: struct { required: []const []const u8, type: []const u8, properties: struct { file_path: struct {
+        type: []const u8,
+        description: []const u8,
+    } } } } }{
         .{
             .type = "function",
             .function = .{
                 .name = "Read",
                 .description = "Read the contents of a file given its path",
                 .parameters = .{
-                    .required = &[_][]const u8{ "file_path" },
+                    .required = &[_][]const u8{"file_path"},
                     .type = "object",
                     .properties = .{
                         .file_path = .{
                             .type = "string",
                             .description = "The path to the file to read, relative to the current working directory",
                         },
-
                     },
                 },
             },
         },
     };
 
-    while(true) {
+    while (true) {
         //Build request body with all messages
         var body_out: std.io.Writer.Allocating = .init(allocator);
         defer body_out.deinit();
@@ -84,10 +80,10 @@ pub fn main() !void {
 
         //Build url and headers
         //Note: OpenRouter expects the API key in the Authorization header as "Authorization:
-        const url_string = try std.fmt.allocPrint(allocator, "{s}/chat/completions",.{ base_url });
+        const url_string = try std.fmt.allocPrint(allocator, "{s}/chat/completions", .{base_url});
         defer allocator.free(url_string);
 
-        const authorization_value = try std.fmt.allocPrint(allocator, "Bearer {s}", .{ api_key });
+        const authorization_value = try std.fmt.allocPrint(allocator, "Bearer {s}", .{api_key});
         defer allocator.free(authorization_value);
 
         //Make HTTP request
@@ -97,7 +93,7 @@ pub fn main() !void {
         var response_out: std.io.Writer.Allocating = .init(allocator);
         defer response_out.deinit();
 
-        _ = try client.fetch( .{
+        _ = try client.fetch(.{
             .location = .{ .url = url_string },
             .method = .POST,
             .payload = body,
@@ -120,7 +116,7 @@ pub fn main() !void {
         const choice = choices.array.items[0];
         const message_object = choice.object.get("message").?.object;
 
-        if(message_object.get("tool_calls")) |tool_calls_value| {
+        if (message_object.get("tool_calls")) |tool_calls_value| {
 
             //Append assistant message
             var assistant_out: std.io.Writer.Allocating = .init(allocator);
@@ -131,7 +127,7 @@ pub fn main() !void {
                 .content = @as(?[]const u8, null),
                 .tool_calls = tool_calls_value,
             });
-            const assistant_message  = assistant_out.written();
+            const assistant_message = assistant_out.written();
             messages[message_count] = try allocator.dupe(u8, assistant_message);
             message_count += 1;
 
